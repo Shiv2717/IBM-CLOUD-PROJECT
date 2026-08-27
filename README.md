@@ -131,21 +131,6 @@ Entry point: `app.py`
 - **Original cloud workflow:** IBM Cloud / IBM notebook environment
 - **Deployment:** Streamlit Community Cloud
 
-## 📌 Resume-ready description
-
-**NetGuard — Network Intrusion Detection System | Python, Streamlit, scikit-learn, IBM Cloud**
-
-- Developed an interactive ML-based network intrusion detection application using Decision Tree and Random Forest classifiers to classify network traffic.
-- Implemented automated preprocessing, train/test evaluation, confusion matrix, precision/recall/F1 analysis and model feature-importance visualization.
-- Built a deployable Streamlit dashboard supporting CSV uploads, single-record predictions, confidence scoring and downloadable prediction history.
-
-## 🎤 Interview explanation
-
-> NetGuard is a machine-learning based Network Intrusion Detection System. I extended my original IBM Cloud Decision Tree project into a web application using Python and Streamlit. The application preprocesses labelled network traffic, trains either a Decision Tree or Random Forest classifier, evaluates the model using accuracy, precision, recall and F1 score, and provides interactive predictions with confidence and feature importance. I also added a synthetic demo dataset so the complete workflow can be demonstrated without requiring a real network capture.
-
-## 🔐 Security / scope note
-
-NetGuard is an **academic and portfolio demonstration**, not a production firewall or packet-blocking system. It does not capture live packets, automatically block attackers, or guarantee detection of novel attacks. Real deployment would require representative datasets, packet/flow ingestion, authentication, secure storage, monitoring, model validation, drift detection and a proper security review.
 
 ## 🚀 Future production upgrades
 
