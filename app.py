@@ -1,3 +1,4 @@
+import io
 import hashlib
 from datetime import datetime
 
@@ -318,49 +319,32 @@ with tab2:
 
     if st.session_state.get("dataset_id") == "demo":
         st.markdown("#### Demo traffic")
-        st.caption("Generate a synthetic record for a quick presentation/demo. This does not inspect real network packets.")
-        if st.button("🎲 Generate demo traffic"):
-            sample = make_sample_data(1, seed=int(datetime.now().timestamp()) % 100000)[X.columns]
-            demo_pred = encoder.inverse_transform([int(pipe.predict(sample)[0])])[0]
-            demo_prob = float(np.max(pipe.predict_proba(sample)[0]))
-            st.dataframe(sample, use_container_width=True)
-            st.info(f"Demo prediction: **{demo_pred}** ({demo_prob:.1%} confidence)")
+        demo = make_sample_data(n=12, seed=int(random_state) + 100)
+        st.dataframe(demo, use_container_width=True)
 
 # ---------- Explainability ----------
 with tab3:
-    st.subheader("🧠 Model explainability")
+    st.subheader("🧠 Explainability")
+    st.caption("Top features used by the trained tree-based model. Feature importance indicates contribution to the model's split decisions; it is not causal proof.")
     fi = feature_importance_df(pipe)
     if fi.empty:
         st.info("Feature importance is unavailable for this model.")
     else:
-        st.markdown("Top features used by the trained tree-based model")
         st.bar_chart(fi.set_index("Feature")["Importance"])
         st.dataframe(fi, use_container_width=True)
-    st.markdown("#### Model configuration")
-    st.code(str(pipe.named_steps["classifier"].get_params()), language="text")
-    st.info("Feature importance shows how useful transformed inputs were to the tree model. It is not a causal explanation.")
 
 # ---------- Project guide ----------
 with tab4:
-    st.subheader("📋 How NetGuard works")
-    st.markdown(
-        """
-        **1. Data ingestion** → upload a labelled CSV or use the synthetic demo dataset.
+    st.subheader("📋 Project guide")
+    st.markdown("""
+    **NetGuard** is an academic/demo Network Intrusion Detection System. It trains a supervised classifier on labelled network-traffic data and predicts whether new records belong to normal or suspicious classes.
 
-        **2. Preprocessing** → numeric missing values are median-imputed; categorical values are most-frequent imputed and one-hot encoded.
+    **Workflow:** upload/load data → choose target → preprocess → train → evaluate → inspect feature importance → analyze individual traffic records.
 
-        **3. Model training** → choose Decision Tree or Random Forest, then split the data into training and test sets.
+    **Models:** Decision Tree and Random Forest.
 
-        **4. Evaluation** → review accuracy, precision, recall, F1, class distribution and confusion matrix.
-
-        **5. Detection** → enter a network record and receive a class prediction with confidence.
-
-        **6. Explainability** → inspect tree-based feature importance.
-        """
-    )
-    st.markdown("#### Recommended production architecture")
-    st.code("Network traffic → ingestion → preprocessing → ML model → prediction API → database → security dashboard", language="text")
-    st.warning("NetGuard is an academic/demo IDS. It does not capture packets, block attacks, or replace a production firewall/IDS. Validate models on representative security data before operational use.")
+    **Important:** the synthetic demo dataset is generated for demonstration only. It does not represent real-world attack traffic and should not be used to claim production detection performance.
+    """)
 
 st.divider()
-st.caption("NetGuard IDS • Python + Streamlit + scikit-learn • Built as a machine-learning cybersecurity demonstration")
+st.caption("NetGuard is a demonstration/academic IDS. Validate models against representative security datasets before production use.")
