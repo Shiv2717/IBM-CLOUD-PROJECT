@@ -1,4 +1,4 @@
-import io
+import hashlib
 from datetime import datetime
 
 import numpy as np
@@ -7,14 +7,7 @@ import streamlit as st
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
-)
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
@@ -22,7 +15,6 @@ from sklearn.tree import DecisionTreeClassifier
 
 st.set_page_config(page_title="NetGuard IDS", page_icon="🛡️", layout="wide", initial_sidebar_state="expanded")
 
-# ---------- Theme / helpers ----------
 st.markdown(
     """
     <style>
@@ -47,7 +39,6 @@ def make_sample_data(n=800, seed=42):
     srv_count = np.maximum(1, count + rng.integers(-3, 4, n))
     failed_logins = rng.poisson(0.35, n)
     error_rate = np.clip(rng.beta(1.2, 8, n), 0, 1)
-
     risk = (
         (protocols == "icmp").astype(float) * 0.9
         + np.isin(services, ["ftp", "ssh"]).astype(float) * 0.35
@@ -79,7 +70,7 @@ def build_pipeline(X, model_name, random_state):
     categorical_cols = [c for c in X.columns if c not in numeric_cols]
     transformers = []
     if numeric_cols:
-        transformers.append(("num", Pipeline([( "imputer", SimpleImputer(strategy="median"))]), numeric_cols))
+        transformers.append(("num", Pipeline([("imputer", SimpleImputer(strategy="median"))]), numeric_cols))
     if categorical_cols:
         transformers.append(
             (
@@ -95,35 +86,26 @@ def build_pipeline(X, model_name, random_state):
         )
     preprocessor = ColumnTransformer(transformers=transformers)
     if model_name == "Decision Tree":
-        model = DecisionTreeClassifier(
-            max_depth=12, min_samples_leaf=2, class_weight="balanced", random_state=random_state
-        )
+        model = DecisionTreeClassifier(max_depth=12, min_samples_leaf=2, class_weight="balanced", random_state=random_state)
     else:
         model = RandomForestClassifier(
-            n_estimators=200,
-            max_depth=16,
-            min_samples_leaf=2,
-            class_weight="balanced",
-            n_jobs=-1,
-            random_state=random_state,
+            n_estimators=200, max_depth=16, min_samples_leaf=2, class_weight="balanced", n_jobs=-1, random_state=random_state
         )
     return Pipeline([("preprocessor", preprocessor), ("classifier", model)])
 
 
 def train_model(df, target, model_name, test_size, random_state):
     X = df.drop(columns=[target]).copy()
-    y_raw = df[target].astype(str).copy()
+    y_raw = df[target].copy()
     mask = y_raw.notna()
     X, y_raw = X.loc[mask].reset_index(drop=True), y_raw.loc[mask].reset_index(drop=True)
-    encoder = LabelEncoder()
-    y = encoder.fit_transform(y_raw)
-    if len(encoder.classes_) < 2:
+    if y_raw.nunique() < 2:
         raise ValueError("The target column must contain at least two classes.")
+    encoder = LabelEncoder()
+    y = encoder.fit_transform(y_raw.astype(str))
     counts = np.bincount(y)
     stratify = y if len(counts) > 1 and counts.min() >= 2 else None
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state, stratify=stratify
-    )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=stratify)
     pipe = build_pipeline(X, model_name, random_state)
     pipe.fit(X_train, y_train)
     pred = pipe.predict(X_test)
@@ -152,6 +134,10 @@ def feature_importance_df(pipe):
         return pd.DataFrame(columns=["Feature", "Importance"])
 
 
+# ---------- Session state ----------
+for key, default in {"history": [], "dataset_source": None, "dataset_id": None}.items():
+    st.session_state.setdefault(key, default)
+
 # ---------- Sidebar ----------
 with st.sidebar:
     st.header("⚙️ Configuration")
@@ -162,6 +148,8 @@ with st.sidebar:
     st.markdown("### Quick start")
     if st.button("🧪 Load demo dataset", use_container_width=True):
         st.session_state["df"] = make_sample_data(seed=int(random_state))
+        st.session_state["dataset_source"] = "Synthetic demo"
+        st.session_state["dataset_id"] = "demo"
         st.session_state.pop("pipeline", None)
         st.session_state["history"] = []
         st.rerun()
@@ -175,17 +163,26 @@ st.markdown(
 )
 
 # ---------- Dataset input ----------
-uploaded = st.file_uploader("Upload a labelled network-traffic CSV", type=["csv"], help="Use a labelled dataset with the prediction target in one column.")
+uploaded = st.file_uploader(
+    "Upload a labelled network-traffic CSV",
+    type=["csv"],
+    help="Use a labelled dataset with the prediction target in one column.",
+)
 if uploaded is not None:
-    try:
-        st.session_state["df"] = pd.read_csv(uploaded)
-        st.session_state.pop("pipeline", None)
-    except Exception as exc:
-        st.error(f"Could not read the CSV: {exc}")
+    file_bytes = uploaded.getvalue()
+    dataset_id = hashlib.md5(file_bytes).hexdigest()
+    if dataset_id != st.session_state.get("dataset_id"):
+        try:
+            st.session_state["df"] = pd.read_csv(io.BytesIO(file_bytes))
+            st.session_state["dataset_source"] = uploaded.name
+            st.session_state["dataset_id"] = dataset_id
+            st.session_state.pop("pipeline", None)
+            st.session_state["history"] = []
+        except Exception as exc:
+            st.error(f"Could not read the CSV: {exc}")
 
 if "df" not in st.session_state:
     st.info("👈 Load the demo dataset from the sidebar, or upload your own labelled CSV to begin.")
-    st.markdown("### What NetGuard provides")
     c1, c2, c3 = st.columns(3)
     c1.markdown("**🔍 Detection**\n\nClassify network records as normal or suspicious.")
     c2.markdown("**📊 Evaluation**\n\nAccuracy, precision, recall, F1 and confusion matrix.")
@@ -205,6 +202,7 @@ mc[1].metric("Columns", len(df.columns))
 mc[2].metric("Missing", f"{int(df.isna().sum().sum()):,}")
 mc[3].metric("Duplicates", f"{int(df.duplicated().sum()):,}")
 mc[4].metric("Memory", f"{df.memory_usage(deep=True).sum()/1024**2:.1f} MB")
+st.caption(f"Dataset source: **{st.session_state.get('dataset_source', 'Current dataset')}**")
 
 with st.expander("Preview and data quality", expanded=False):
     st.dataframe(df.head(25), use_container_width=True)
@@ -245,14 +243,12 @@ if "pipeline" not in st.session_state:
 
 # ---------- Navigation ----------
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🔎 Detection", "🧠 Explainability", "📋 Project Guide"])
-
 metrics = st.session_state["metrics"]
 encoder = st.session_state["encoder"]
 pipe = st.session_state["pipeline"]
 X = st.session_state["X"]
 y_test = st.session_state["y_test"]
 pred = st.session_state["pred"]
-probs = st.session_state["probs"]
 labels = encoder.classes_.tolist()
 
 # ---------- Dashboard ----------
@@ -263,7 +259,6 @@ with tab1:
     cols[1].metric("Precision", f"{metrics['precision']:.2%}")
     cols[2].metric("Recall", f"{metrics['recall']:.2%}")
     cols[3].metric("F1 score", f"{metrics['f1']:.2%}")
-
     a, b = st.columns(2)
     with a:
         st.markdown("#### Class distribution")
@@ -273,10 +268,10 @@ with tab1:
         cm = confusion_matrix(y_test, pred, labels=range(len(labels)))
         cm_df = pd.DataFrame(cm, index=[f"Actual: {x}" for x in labels], columns=[f"Pred: {x}" for x in labels])
         st.dataframe(cm_df, use_container_width=True)
-
     st.markdown("#### Classification report")
     report = classification_report(y_test, pred, labels=range(len(labels)), target_names=labels, output_dict=True, zero_division=0)
     st.dataframe(pd.DataFrame(report).T.round(3), use_container_width=True)
+    st.caption("For an IDS, recall is particularly important because missed attacks (false negatives) can be costly.")
 
 # ---------- Detection ----------
 with tab2:
@@ -319,17 +314,17 @@ with tab2:
     if not history.empty:
         st.markdown("#### Prediction history")
         st.dataframe(history, use_container_width=True)
-        csv = history.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Download prediction history", csv, "netguard_predictions.csv", "text/csv")
+        st.download_button("⬇️ Download prediction history", history.to_csv(index=False).encode("utf-8"), "netguard_predictions.csv", "text/csv")
 
-    st.markdown("#### Demo traffic")
-    st.caption("Generate a synthetic record for a quick presentation/demo. This does not inspect real network packets.")
-    if st.button("🎲 Generate demo traffic"):
-        sample = make_sample_data(1, seed=int(datetime.now().timestamp()) % 100000)[X.columns]
-        demo_pred = encoder.inverse_transform([int(pipe.predict(sample)[0])])[0]
-        demo_prob = float(np.max(pipe.predict_proba(sample)[0]))
-        st.dataframe(sample, use_container_width=True)
-        st.info(f"Demo prediction: **{demo_pred}** ({demo_prob:.1%} confidence)")
+    if st.session_state.get("dataset_id") == "demo":
+        st.markdown("#### Demo traffic")
+        st.caption("Generate a synthetic record for a quick presentation/demo. This does not inspect real network packets.")
+        if st.button("🎲 Generate demo traffic"):
+            sample = make_sample_data(1, seed=int(datetime.now().timestamp()) % 100000)[X.columns]
+            demo_pred = encoder.inverse_transform([int(pipe.predict(sample)[0])])[0]
+            demo_prob = float(np.max(pipe.predict_proba(sample)[0]))
+            st.dataframe(sample, use_container_width=True)
+            st.info(f"Demo prediction: **{demo_pred}** ({demo_prob:.1%} confidence)")
 
 # ---------- Explainability ----------
 with tab3:
@@ -343,7 +338,7 @@ with tab3:
         st.dataframe(fi, use_container_width=True)
     st.markdown("#### Model configuration")
     st.code(str(pipe.named_steps["classifier"].get_params()), language="text")
-    st.info("Feature importance indicates which transformed inputs contributed most to the tree model's decisions. It is not a causal explanation and should be validated before production use.")
+    st.info("Feature importance shows how useful transformed inputs were to the tree model. It is not a causal explanation.")
 
 # ---------- Project guide ----------
 with tab4:
@@ -358,16 +353,13 @@ with tab4:
 
         **4. Evaluation** → review accuracy, precision, recall, F1, class distribution and confusion matrix.
 
-        **5. Detection** → enter a network record and receive a class prediction with model confidence.
+        **5. Detection** → enter a network record and receive a class prediction with confidence.
 
         **6. Explainability** → inspect tree-based feature importance.
         """
     )
     st.markdown("#### Recommended production architecture")
-    st.code(
-        "Network traffic → ingestion → preprocessing → ML model → prediction API → database → security dashboard",
-        language="text",
-    )
+    st.code("Network traffic → ingestion → preprocessing → ML model → prediction API → database → security dashboard", language="text")
     st.warning("NetGuard is an academic/demo IDS. It does not capture packets, block attacks, or replace a production firewall/IDS. Validate models on representative security data before operational use.")
 
 st.divider()
